@@ -1,0 +1,75 @@
+{
+  "variables": {
+    "aws_source_ami": "ami-98f3f6fb",
+    "winrm_username": "Administrator",
+    "aws_instance_type": "t2.medium",
+    "aws_instance_profile": "",
+    "aws_vpc_id": "",
+    "aws_subnet_id": "",
+    "aws_region": "ap-southeast-2",
+    "soe_version": "",
+    "build_number": "",
+    "build_uuid": "",
+    "jenkins_password":"david123!"
+  },
+  "builders": [{
+    "type": "amazon-ebs",
+    "region": "{{ user `aws_region` }}",
+    "source_ami": "{{ user `aws_source_ami` }}",
+    "instance_type": "{{ user `aws_instance_type` }}",
+    "ami_name": "{{user `soe_version`}}-jenkins-master-{{user `build_number`}}-{{timestamp | clean_ami_name}}",
+    "ami_description": "Jenkins 2.0 master on Windows Server 2016",
+    "user_data_file": "{{template_dir}}/scripts/user-data.ps1",
+    "communicator": "winrm",
+    "winrm_insecure": "true",
+    "winrm_port": "5986",
+    "winrm_use_ssl": "true",
+    "winrm_username": "administrator",
+    "tags": {
+      "Name": "{{user `soe_version`}}-jenkins-master-{{user `build_number`}}",
+      "BuildNumber": "{{user `build_number`}}",
+      "BuildUUID": "{{user `build_uuid`}}"
+    }
+  }],
+  "provisioners": [
+    {
+      "type": "powershell",
+      "scripts": [
+        "{{template_dir}}/scripts/Install-Chocolatey.ps1",
+        "{{template_dir}}/scripts/provision.ps1"
+      ]
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/files/nginx/conf/nginx.conf",
+      "destination": "C:\\ProgramData\\nginx\\conf\\nginx.conf"
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/files/nginx/conf.d/default.conf",
+      "destination": "C:\\ProgramData\\nginx\\conf.d\\default.conf"
+    },
+    {
+      "type": "powershell",
+      "scripts": [
+        "{{template_dir}}/scripts/configure-Jenkins.ps1",
+        "{{template_dir}}/scripts/EC2LaunchConfig.ps1"
+      ]
+    },
+    {
+      "type": "windows-shell",
+      "inline": [
+        "set /p initialAdminPassword=<\"C:\\Program Files (x86)\\Jenkins\\secrets\\initialAdminPassword\"",
+        "echo jenkins.model.Jenkins.instance.securityRealm.createAccount(\"admin\", \"{{ user `jenkins_password` }}\") >> \"C:\\Program Files (x86)\\Jenkins\\secrets\\user.groovy\"",
+        "java -jar \"C:\\Program Files (x86)\\Jenkins\\jenkins-cli.jar\" -s http://127.0.0.1:8080 -noKeyAuth groovy \"C:\\Program Files (x86)\\Jenkins\\secrets\\user.groovy\" --username admin --password %initialAdminPassword%"
+      ]
+    },
+    {
+      "type": "powershell",
+      "inline": [
+        "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\InitializeInstance.ps1 -Schedule",
+        "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\SysprepInstance.ps1 -NoShutdown"
+      ]
+    }
+  ]
+}
